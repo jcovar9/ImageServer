@@ -1,0 +1,419 @@
+﻿@model JonahsImageServer.Models.HomeViewModel
+@{
+    ViewData["Title"] = "Home Page";
+    string currentUrl = "";
+}
+
+<div class="container-fluid">
+
+    @*  PATH BUTTONS  *@
+    <div class="d-flex align-items-center my-2">
+        @{
+            string url = Url.Action("EnterDirectory", "Home") + "?folderIDPath=";
+            for (int i = 0; i < Model.FolderPath.Count; i++)
+            {
+                url += "/" + Model.FolderPath[i].ID;
+                <a href="@url" class="btn btn-secondary me-1">
+                    /@Model.FolderPath[i].Name
+                </a>
+            }
+            <div class="rounded border bg-light px-1 py-2 me-2">
+                /@Model.CurrFolder.Name - @((Model.CurrFolder.Size / 1048576.0).ToString("F2")) MB - Owner: @Model.CurrFolder.Owner
+            </div>
+            currentUrl = url + "/" + Model.CurrFolder.ID;
+        }
+    </div>
+
+    @*  CREATE FOLDER AND UPLOAD BUTTON  *@
+    <div class="d-flex align-items-center my-2">
+        <div class="rounded border bg-light px-1 py-2 me-3">
+            <input type="text" id="newFolderName" placeholder="Enter new folder name" />
+            <button onclick="createFolder()">Create Folder</button>
+        </div>
+
+        <div class="text-center">
+            <label for="fileInput" class="btn btn-primary">
+                <i class="bi bi-upload"></i> Upload Images
+            </label>
+            <input type="file" id="fileInput" multiple accept="image/*" style="display: none;" onchange="uploadFiles(this.files)">
+        </div>
+    </div>
+
+    @*  FOLDERS AND IMAGES  *@
+    <div id="folderContainer" class="d-flex flex-column my-1">
+    </div>
+    <div id="imageContainer" class="d-flex flex-column my-1">
+    </div>
+
+    @*  UPLOAD PROGRESS MODAL  *@
+    <div id="uploadProgressModal" class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="uploadProgressTitle" class="modal-title"></h5>
+                    <button id="uploadProgressCloseBtn" type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="progress">
+                        <div id="uploadProgressBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                    <p id="uploadProgressText" class="mt-2"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @*  IMAGE PREVIEW MODAL  *@
+    <div class="modal fade" id="imagePreviewModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="imagePreviewTitle"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img id="modalImage" src="" class="img-fluid" style="max-height: 80vh; width: auto;" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @*  SHARING MODAL  *@
+    <div class="modal fade" id="shareModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="shareModalLabel">Share Folder</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="userList">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const CURR_FOLDER_ID = "@Model.CurrFolder.ID";
+    const FOLDER_DIV = document.getElementById("folderContainer");
+    const IMAGE_DIV = document.getElementById("imageContainer");
+    let totalItems = @(Model.CurrFolder.Subfolders.Count + Model.CurrFolder.Images.Count);
+    let numItems = 0;
+    let isLoading = false;
+    checkLoadItems();
+
+    async function checkLoadItems() {
+        if (totalItems == numItems) {
+            return;
+        } else if (isLoading) {
+            setTimeout(checkLoadItems, 500);
+        } else if (document.documentElement.scrollHeight <= window.scrollY + window.innerHeight + 200){
+            await loadItems();
+            setTimeout(checkLoadItems, 500);
+        } else {
+            setTimeout(checkLoadItems, 1000);
+        }
+    }
+
+    async function loadItems() {
+        isLoading = true;
+        let prevNumItems = numItems;
+
+        await fetch(`/Home/GetItems?folderID=${CURR_FOLDER_ID}&startIndex=${numItems}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log(data.result);
+                    Object.entries(data.result["Subfolders"]).forEach(([id, dict]) => {
+                        FOLDER_DIV.innerHTML += createHTMLSubfolder(id, dict["Name"], dict["Size"], dict["Owner"]);
+                        numItems++;
+                    });
+                    Object.entries(data.result["Images"]).forEach(([id, dict]) => {
+                        IMAGE_DIV.innerHTML += createHTMLImage(id, dict["Name"], dict["Size"]);
+                        numItems++;
+                    });
+                } else {
+                    console.log(data.message);
+                }
+            });
+        isLoading = false;
+        console.log(`${numItems - prevNumItems} items loaded`);
+    }
+
+    function createHTMLSubfolder(id, name, size, owner) {
+        return `
+        <div id="${id}" class="d-flex rounded border my-1 py-2 bg-light">
+            <a href="@(currentUrl)/${id}" class="d-flex flex-grow-1 text-decoration-none" style="min-width: 0;">
+                <div class="d-flex align-items-center" style="min-width: 0;">
+                    <div class="d-flex flex-grow-1 align-items-center mx-1">
+                        <i class="bi bi-folder-fill text-warning fs-3 mx-2"></i>
+                        /${name}
+                    </div>
+                    <div class="mx-2 text-body" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${size}
+                    </div>
+                    <div class="mx-2 text-body" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        Owner: ${owner}
+                    </div>
+                </div>
+            </a>
+            ${owner == "@(Model.Username)" ? `
+            <div class="d-flex align-items-center me-3">
+                <button class="btn btn-outline-primary btn-sm" onclick="openShareModal('${id}', '${name}')">
+                    Share
+                </button>
+            </div>
+            <div class="d-flex align-items-center me-2">
+                <button class="d-flex btn btn-danger btn-sm" onclick="deleteFolder('${id}')">
+                    <i class="bi bi-trash"></i> Delete
+                </button>
+            </div>`
+            : "" }
+        </div>`;
+    }
+
+    function createHTMLImage(id, name, size) {
+        return `
+        <div id="${id}" class="d-flex rounded border my-1 py-2 bg-light">
+            <a href="javascript:void(0);" onclick="openImagePreview('${id}', '${name}')" class="d-flex flex-grow-1 text-decoration-none" style="min-width: 0; color: inherit; font: inherit;">
+                <div class="d-flex align-items-center" style="min-width: 0;">
+                    <img class="d-flex flex-grow-1 img-thumbnail ms-1" src="@Url.Action("GetThumbnail", "Home")?imageID=${id}" style="height: auto; width: 128px;" alt="Image"/>
+                    <div class="d-flex flex-column mx-2" style="min-width:0;">
+                        <div class="my-1" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            ${name}
+                        </div>
+                        <div class="my-1" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            ${size}
+                        </div>
+                    </div>
+                </div>
+            </a>
+            ${"@Model.CurrFolder.Owner" == "@Model.Username" ? `
+            <div class="d-flex align-items-center me-3">
+                <a href="@(Url.Action("DownloadImage", "Home"))?imageID=${id}" class="d-flex btn btn-primary">
+                    <i class="bi bi-download"></i> Download
+                </a>
+            </div>
+            <div class="d-flex align-items-center me-2">
+                <button class="d-flex btn btn-danger btn-sm" onclick="deleteImage('${id}')">
+                    <i class="bi bi-trash"></i> Delete
+                </button>
+            </div>` : "" }
+        </div>`;
+    }
+
+    async function openShareModal(folderID, folderName) {
+        document.getElementById("shareModalLabel").innerText = "Share Folder: " + folderName;
+
+        await fetch(`/Home/GetUsersForSharing?folderID=${folderID}`)
+            .then(response => response.json())
+            .then(jsonResponse => {
+                if (jsonResponse.success) {
+                    const userListDiv = document.getElementById("userList");
+                    userListDiv.innerHTML = "";
+
+                    Object.entries(jsonResponse.result).forEach(([username, isShared]) => {
+                        const toggleId = `user-toggle-${username}`;
+                        userListDiv.innerHTML += `
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="${toggleId}"
+                                    ${isShared ? "checked" : ""}
+                                    onchange="handleToggleChange('${folderID}', '${username}', this.checked)">
+                                <label class="form-check-label" for="${toggleId}">${username}</label>
+                            </div>
+                        `;
+                    });
+
+                    new bootstrap.Modal(document.getElementById("shareModal")).show();
+                } else {
+                    alert(jsonResponse.message);
+                }
+            });
+    }
+
+    async function handleToggleChange(folderID, username, isChecked) {
+        var shareOrUnshare = isChecked ? "Share" : "Unshare";
+
+        const formData = new FormData();
+        formData.append("folderID", folderID);
+        formData.append("otherUsername", username);
+
+        try {
+            const response = await fetch(`/Home/${shareOrUnshare}FolderWithUser`, {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+            if (!result.success) {
+                alert(`${shareOrUnshare}ing with ${username} failed! ${result.message}`);
+            }
+        } catch (error){
+            alert("An error occurred: " + error.message);
+        }
+    }
+
+    function openImagePreview(imageID, imageName) {
+        document.getElementById("modalImage").src = "@Url.Action("GetImagePreview", "Home")" + "?imageID=" + imageID;
+        var modal = new bootstrap.Modal(document.getElementById("imagePreviewModal"));
+        document.getElementById("imagePreviewTitle").textContent = imageName;
+        modal.show();
+    }
+
+    async function uploadFiles(files) {
+        if (0 === files.length) {
+            alert("No images selected for upload.");
+            return;
+        }
+        const chunkSize = 5 * 1024 * 1024; // 5MB
+
+        // Show the upload modal
+        new bootstrap.Modal(document.getElementById("uploadProgressModal")).show();
+        var progressTitle = document.getElementById("uploadProgressTitle");
+        var progressBar = document.getElementById("uploadProgressBar");
+        var progressText = document.getElementById("uploadProgressText");
+        progressText.innerHTML = "";
+        var closeBtn = document.getElementById("uploadProgressCloseBtn");
+        closeBtn.disabled = true;
+        let successFiles = 0;
+        progressTitle.textContent = `Uploaded ${successFiles}/${files.length} files successfully`;
+
+        for (const file of files) {
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            let success = true;
+
+            for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                const start = chunkIndex * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+                const chunk = file.slice(start, end);
+
+                const formData = new FormData();
+                formData.append("folderID", CURR_FOLDER_ID);
+                formData.append("chunk", chunk);
+                formData.append("fileName", file.name);
+                formData.append("chunkIndex", chunkIndex);
+                formData.append("totalChunks", totalChunks);
+
+                const response = await fetch(`/Home/UploadChunk`, {
+                    method: "POST",
+                    body: formData
+                });
+                const responseText = await response.text();
+
+                try {
+                    const result = JSON.parse(responseText);
+
+                    if (!result.success) {
+                        progressText.innerHTML += `${file.name} failed to upload. Server Error: ${result.message}<br>`;
+                        success = false;
+                        break;
+                    }
+                } catch (error) {
+                    progressText.innerHTML += `${file.name} failed to upload. Error: ${responseText}<br>`;
+                    success = false;
+                    break;
+                }
+            }
+
+            if (success) {
+                successFiles++;
+                let progressPercent = Math.round((successFiles / files.length) * 100);
+                progressBar.style.width = progressPercent + "%";
+                progressTitle.textContent = `Uploaded ${successFiles}/${files.length} files successfully`;
+            }
+        }
+        progressBar.style.width = "100%";
+        progressText.innerHTML += `Complete!<br>`;
+        progressTitle.textContent = `Uploaded ${successFiles}/${files.length} files successfully`;
+        totalItems += successFiles;
+
+        closeBtn.disabled = false;
+        checkLoadItems();
+    }
+
+    async function createFolder() {
+        const folderNameInput = document.getElementById("newFolderName");
+        const folderName = folderNameInput.value;
+
+        if (!folderName) {
+            alert("Please enter a folder name.");
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append("folderID", CURR_FOLDER_ID);
+        formData.append("folderName", folderName);
+
+        try {
+            const response = await fetch(`/Home/CreateFolder`, {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                FOLDER_DIV.innerHTML += createHTMLSubfolder(result.id, result.name, "0.00 MB", result.owner);
+                totalItems++;
+                numItems++;
+                folderNameInput.value = "";
+            } else {
+                alert("Error: " + result.message);
+            }
+        } catch (error) {
+            alert("An error occurred: " + error.message);
+        }
+    }
+
+    async function deleteImage(imageID) {
+        const formData = new FormData();
+        formData.append("folderID", CURR_FOLDER_ID);
+        formData.append("imageID", imageID);
+
+        try {
+            const response = await fetch(`/Home/DeleteImage`, {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                document.getElementById(imageID).remove();
+                numItems--;
+                totalItems--;
+            } else {
+                alert("Delete image failed! " + result.message);
+            }
+        } catch (error) {
+            alert("An error occurred: " + error.message);
+        }
+    }
+
+    async function deleteFolder(folderID) {
+        const formData = new FormData();
+        formData.append("folderID", folderID);
+
+        try {
+            const response = await fetch(`/Home/DeleteFolder`, {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                document.getElementById(folderID).remove();
+                numItems--;
+                totalItems--;
+            } else {
+                alert("Delete folder failed! " + result.message);
+            }
+        } catch (error) {
+            alert("An error occurred: " + error.message);
+        }
+    }
+</script>
