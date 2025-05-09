@@ -23,6 +23,7 @@ builder.Services.AddResponseCompression(options =>
 
 var app = builder.Build();
 
+app.UsePathBase("/imageserver");
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -31,15 +32,14 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseHttpsRedirection();
-app.UsePathBase("/imageserver");
-app.UseRouting();
-app.UseSession();
-app.UseAuthorization();
-app.MapControllers();
-app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=EnterDirectory}/{id?}");
-
 app.UseStaticFiles(new StaticFileOptions
 {
     RequestPath = "/imageserver"
 });
+app.UseRouting();
+app.UseSession();
+app.UseAuthorization();
+//app.MapControllers();
+app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=EnterDirectory}/{id?}");
+
 app.Run();
