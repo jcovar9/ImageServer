@@ -12,35 +12,59 @@
 <body>
     <header>
         <nav class="navbar navbar-expand-sm navbar-light border-3 border-bottom box-shadow mb-3">
-            <div class="container-fluid justify-content-start">
-                <label class="navbar-brand">Jonahs Image Server</label>
-                @if(Context.Session.GetString("Username") != null)
-                {
-                    <div class="d-flex me-3">
-                        Hello, @Context.Session.GetString("Username")
-                    </div>
-                }
-                <button class="navbar-toggler ms-auto" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse">
+            <div class="container-fluid">
+                <div class="d-flex align-items-center navbar-brand">
+                    <label>Jonahs Image Server</label>
+                    @if(Context.Session.GetString("UserID") != null)
+                    {
+                            <p class="ms-3 mb-0 fs-6">Hello,</p>
+                            <a class="btn btn-primary btn-sm mx-1" asp-controller="Account" asp-action="Profile">
+                                <i class="bi bi-person"></i>
+                                @ViewBag.Username
+                            </a>
+                    }
+                </div>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse">
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <div class="collapse navbar-collapse">
-                    <ul class="navbar-nav">
+                    <ul class="navbar-nav me-auto">
                         <div class="mt-2"></div>
-                        @if(Context.Session.GetString("Username") != null)
+                        @if (Context.Session.GetString("UserID") != null)
                         {
-                            <a class="btn btn-primary mx-1" asp-controller="Home" asp-action="EnterDirectory" asp-route-folderIDPath="@ViewBag.RootID">Home</a>
+                            <a class="btn btn-primary btn-sm mx-1" asp-controller="Home" asp-action="EnterDirectory" asp-route-folderIDPath="@ViewBag.RootID">
+                                <i class="bi bi-house"></i>
+                                Home
+                            </a>
                             <div class="mt-1"></div>
-                            <a class="btn btn-primary mx-1" asp-controller="Home" asp-action="EnterDirectory" asp-route-folderIDPath="@ViewBag.SharedWithMeID">Shared With Me</a>
-                            <div class="mt-1"></div>
-                            <a class="btn btn-danger mx-1" asp-controller="Account" asp-action="Login">Logout</a>
+                            <a class="btn btn-primary btn-sm mx-1" asp-controller="Home" asp-action="EnterDirectory" asp-route-folderIDPath="@ViewBag.SharedWithMeID">
+                                <i class="bi bi-share"></i>
+                                Shared With Me
+                            </a>
                         }
                         else
                         {
-                            <a class="btn btn-primary mx-1" asp-controller="Account" asp-action="Login">Login</a>
+                            <a class="btn btn-primary btn-sm mx-1" asp-controller="Account" asp-action="Login">
+                                <i class="bi bi-box-arrow-in-left"></i>
+                                Login
+                            </a>
                             <div class="mt-1"></div>
-                            <a class="btn btn-primary mx-1" asp-controller="Account" asp-action="Register">Register</a>
+                            <a class="btn btn-primary btn-sm mx-1" asp-controller="Account" asp-action="Register">
+                                <i class="bi bi-person-plus"></i>
+                                Register
+                            </a>
                         }
                     </ul>
+                    @if (Context.Session.GetString("UserID") != null)
+                    {
+                        <ul class="navbar-nav">
+                            <div class="mt-1"></div>
+                            <a class="btn btn-danger btn-sm mx-1" asp-controller="Account" asp-action="Login">
+                                <i class="bi bi-box-arrow-left"></i>
+                                Logout
+                            </a>
+                        </ul>
+                    }
                 </div>
             </div>
         </nav>

@@ -2,12 +2,167 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using JonahsImageServer.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace JonahsImageServer.Controllers;
 
 public class AccountController(ApplicationDbContext context) : Controller
 {
     private readonly ApplicationDbContext _context = context;
+
+    [HttpPost]
+    public async Task<IActionResult> DeleteProfile()
+    {
+        try
+        {
+            string? userID = HttpContext.Session.GetString("UserID");
+            if (string.IsNullOrEmpty(userID))
+            {
+                return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+            }
+
+            DBUser? dBUser = await _context.Users.FindAsync(userID);
+            if (dBUser is null)
+            {
+                return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+            }
+
+            DBFolder? sharedFolder = await _context.Folders.FindAsync(dBUser.SharedWithMeID);
+            if (sharedFolder is not null)
+            {
+                List<DBFolder> foldersSharedWithMe = await _context.Folders
+                    .Where(f => sharedFolder.Subfolders.Contains(f.ID))
+                    .ToListAsync();
+
+                foldersSharedWithMe.ForEach(folder => folder.SharedWith.Remove(dBUser.ID));
+                _context.Folders.Remove(sharedFolder);
+            }
+
+            await HomeController.RecursiveDeleteFolder(_context, dBUser.RootID);
+            _context.Users.Remove(dBUser);
+            await _context.SaveChangesAsync();
+            return Json(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Profile()
+    {
+        string? userID = HttpContext.Session.GetString("UserID");
+        if (string.IsNullOrEmpty(userID))
+        {
+            return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+        }
+
+        DBUser? dBUser = await _context.Users.FindAsync(userID);
+        if (dBUser is null)
+        {
+            return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+        }
+
+        DBFolder? dBFolder = await _context.Folders.FindAsync(dBUser.RootID);
+        if (dBFolder is not null)
+        {
+            ViewBag.SpaceUsed = HomeController.GetDisplaySize(dBFolder.Size);
+        }
+        DBFolder? dBSharedFolder = await _context.Folders.FindAsync(dBUser.SharedWithMeID);
+        if (dBSharedFolder is not null)
+        {
+            ViewBag.SharedFolders = dBSharedFolder.Subfolders.Count;
+        }
+
+        if (HttpContext.Session.GetString("Error") is not null)
+        {
+            ViewBag.Error = HttpContext.Session.GetString("Error");
+            HttpContext.Session.Remove("Error");
+        }
+
+        ViewBag.Username = dBUser.Username;
+        ViewBag.RootID = dBUser.RootID;
+        ViewBag.SharedWithMeID = dBUser.SharedWithMeID;
+        return View("Profile");
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> ChangeUsername(string Username)
+    {
+        string? userID = HttpContext.Session.GetString("UserID");
+        if (string.IsNullOrEmpty(userID))
+        {
+            return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+        }
+
+        DBUser? dBUser = await _context.Users.FindAsync(userID);
+        if (dBUser is null)
+        {
+            return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+        }
+
+        if (dBUser.Username == Username)
+        {
+            HttpContext.Session.SetString("Error", $"Username is already {dBUser.Username}");
+            return RedirectToAction("Profile", "Account");
+        }
+
+        // Check if the username is already taken
+        DBUser? user = await _context.Users
+            .Where(u => u.Username == Username)
+            .FirstOrDefaultAsync();
+        if (user is not null)
+        {
+            HttpContext.Session.SetString("Error", $"Username: {user.Username} is already taken.");
+            return RedirectToAction("Profile", "Account");
+        }
+
+        if (HomeController.InvalidChars.Any(Username.Contains))
+        {
+            HttpContext.Session.SetString("Error", $"Username cannot contain: {string.Join(", ", HomeController.InvalidChars.ToCharArray())}");
+            return RedirectToAction("Profile", "Account");
+        }
+
+        dBUser.Username = Username;
+        _context.Users.Update(dBUser);
+        await _context.SaveChangesAsync();
+        return RedirectToAction("Profile", "Account");
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> ChangePassword(string OldPassword, string NewPassword)
+    {
+        string? userID = HttpContext.Session.GetString("UserID");
+        if (string.IsNullOrEmpty(userID))
+        {
+            return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+        }
+
+        DBUser? dBUser = await _context.Users.FindAsync(userID);
+        if (dBUser is null)
+        {
+            return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
+        }
+
+        if (OldPassword == NewPassword)
+        {
+            HttpContext.Session.SetString("Error", $"New password cannot be the same as old password");
+            return RedirectToAction("Profile", "Account");
+        }
+
+        string oldPasswordHash = ComputeSha256Hash(OldPassword);
+        if (dBUser.PasswordHash != oldPasswordHash)
+        {
+            HttpContext.Session.SetString("Error", $"Old password is incorrect: {OldPassword}");
+            return RedirectToAction("Profile", "Account");
+        }
+
+        dBUser.PasswordHash = ComputeSha256Hash(NewPassword);
+        _context.Users.Update(dBUser);
+        await _context.SaveChangesAsync();
+        return RedirectToAction("Profile", "Account");
+    }
 
     [HttpGet]
     public IActionResult Login()
@@ -24,8 +179,10 @@ public class AccountController(ApplicationDbContext context) : Controller
             ViewBag.Error = "Username and password are required.";
             return View("Login");
         }
-        DBUser? user = await _context.Users.FindAsync(Username);
-        if(user is null)
+        DBUser? user = await _context.Users
+            .Where(u => u.Username == Username)
+            .FirstOrDefaultAsync();
+        if (user is null)
         {
             ViewBag.Error = "Username not associated with existing User.";
             return View("Login");
@@ -36,9 +193,8 @@ public class AccountController(ApplicationDbContext context) : Controller
             ViewBag.Error = "Password incorrect.";
             return View("Login");
         }
-        Console.WriteLine(user.Username + " logged in.");
 
-        HttpContext.Session.SetString("Username", Username);
+        HttpContext.Session.SetString("UserID", user.ID);
 
         return RedirectToAction("EnterDirectory", "Home", new { folderIDPath = user.RootID });
     }
@@ -53,35 +209,29 @@ public class AccountController(ApplicationDbContext context) : Controller
     [HttpPost]
     public async Task<IActionResult> Register(string Username, string Password)
     {
-        if (string.IsNullOrEmpty(Username) || string.IsNullOrEmpty(Password))
+        if (HomeController.InvalidChars.Any(Username.Contains))
         {
-            ViewBag.Error = "Username and password are required.";
-            return View("Register");
-        }
-
-        if (Username.Any(HomeController.InvalidChars.Contains))
-        {
-            ViewBag.Error = "Username cannot have " + string.Join(", ", HomeController.InvalidChars.ToCharArray());
+            ViewBag.Error = $"Username cannot contain: {string.Join(", ", HomeController.InvalidChars.ToCharArray())}";
             return View("Register");
         }
 
         // Check if the username is already taken
-        DBUser? user = await _context.Users.FindAsync(Username);
-        if(user is not null)
+        DBUser? user = await _context.Users
+            .Where(u => u.Username == Username)
+            .FirstOrDefaultAsync();
+        if (user is not null)
         {
             ViewBag.Error = "Username is already taken.";
             return View("Register");
         }
 
-        // Hash the password
-        string passwordHash = ComputeSha256Hash(Password);
-
+        string userID = Guid.NewGuid().ToString();
         // Create root folder
         DBFolder rootFolder = new()
         {
             ID = Guid.NewGuid().ToString(),
             Name = "Home",
-            Owner = Username,
+            OwnerID = userID,
             Size = 0.0,
         };
 
@@ -90,7 +240,7 @@ public class AccountController(ApplicationDbContext context) : Controller
         {
             ID = Guid.NewGuid().ToString(),
             Name = "Shared With Me",
-            Owner = Username,
+            OwnerID = userID,
             Size = 0.0,
         };
         _context.Folders.AddRange(rootFolder, sharedFolder);
@@ -98,16 +248,15 @@ public class AccountController(ApplicationDbContext context) : Controller
         // Create new user
         user = new DBUser
         {
+            ID = userID,
             Username = Username,
-            PasswordHash = passwordHash,
+            PasswordHash = ComputeSha256Hash(Password),
             RootID = rootFolder.ID,
             SharedWithMeID = sharedFolder.ID,
         };
         _context.Users.Add(user);
 
         await _context.SaveChangesAsync();
-        
-        Console.WriteLine(user.Username + " registered.");
 
         // Redirect to Login page
         return RedirectToAction("Login", "Account");

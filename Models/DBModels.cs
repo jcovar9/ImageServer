@@ -5,6 +5,7 @@ namespace JonahsImageServer.Models
     public class DBUser
     {
         [Key]
+        public required string ID { get; set; }
         public required string Username { get; set; }
         public required string PasswordHash { get; set; }
         public required string RootID { get; set; }
@@ -16,7 +17,7 @@ namespace JonahsImageServer.Models
         [Key]
         public required string ID { get; set; }
         public required string Name { get; set; }
-        public required string Owner { get; set; }
+        public required string OwnerID { get; set; }
         public required double Size { get; set; } = 0.0;
         public string? ParentFolderID { get; set; }
         public List<string> Subfolders { get; set; } = [];

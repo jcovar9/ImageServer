@@ -11,10 +11,10 @@ public class ApplicationDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<DBUser>().HasKey(u => u.Username); // Username is the primary key
-            
+        modelBuilder.Entity<DBUser>().HasKey(u => u.ID); // Username is the primary key
+
         modelBuilder.Entity<DBFolder>().HasKey(f => f.ID); // ID is the primary key
-        
+
         modelBuilder.Entity<DBImage>().HasKey(i => i.ID); // ID is the primary key
 
         base.OnModelCreating(modelBuilder);

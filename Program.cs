@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 
+Directory.CreateDirectory("wwwroot/uploads");
+
 var builder = WebApplication.CreateBuilder(args);
 
 NetVips.Cache.MaxFiles = 0;
@@ -35,6 +37,6 @@ app.UseRouting();
 app.UseSession();
 app.UseAuthorization();
 app.MapControllers();
-app.MapControllerRoute( name: "default", pattern: "{controller=Home}/{action=EnterDirectory}/{id?}" );
+app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=EnterDirectory}/{id?}");
 
 app.Run();

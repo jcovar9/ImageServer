@@ -1,0 +1,62 @@
+@{
+    ViewData["Title"] = "Profile Page";
+}
+
+<h2>My Profile</h2>
+
+<div class="d-flex flex-column rounded border bg-light my-2 p-2">
+    <p>Total Space Used: @ViewBag.SpaceUsed</p>
+    <p>Folders Shared With Me: @ViewBag.SharedFolders</p>
+</div>
+
+@if (ViewBag.Error != null)
+{
+    <div class="alert alert-danger">@ViewBag.Error</div>
+}
+
+<div class="d-flex flex-column rounded border bg-light my-2 p-2">
+    <h4>Change Username</h3>
+    <p>Current Username: @ViewBag.Username</p>
+    <form method="post" asp-controller="Account" asp-action="ChangeUsername">
+        <label>New Username:</label>
+        <input type="text" name="Username" class="form-control" required />
+        <br />
+        <button type="submit" class="btn btn-primary">Change Username</button>
+    </form>
+</div>
+
+<div class="d-flex flex-column rounded border bg-light my-2 p-2">
+    <h4>Change Password</h4>
+    <form method="post" asp-controller="Account" asp-action="ChangePassword">
+        <label>Old Password:</label>
+        <input type="password" name="OldPassword" class="form-control" required />
+        <br />
+        <label>New Password:</label>
+        <input type="password" name="NewPassword" class="form-control" required />
+        <br />
+        <button type="submit" class="btn btn-primary">Change Password</button>
+    </form>
+</div>
+
+<button class="d-flex btn btn-danger btn-sm ms-auto" onclick="deleteProfile()">
+    Delete Profile
+</button>
+
+<script>
+    async function deleteProfile() {
+        if (confirm("Are you sure you want to delete your profile and all of your images and folders?")) {
+            try {
+                const response = await fetch(`/Account/DeleteProfile`, { method: "POST" });
+
+                const result = await response.json();
+                if (result.success) {
+                    window.location.href = "@Url.Action("Login", "Account")";
+                } else {
+                    alert("Delete Profile failed! " + result.message);
+                }
+            } catch (error) {
+                alert("An error occured: " + error.message);
+            }
+        }
+    }
+</script>

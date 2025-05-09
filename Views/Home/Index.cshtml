@@ -7,42 +7,54 @@
 <div class="container-fluid">
 
     @*  PATH BUTTONS  *@
-    <div class="d-flex align-items-center my-2">
+    <div class="d-flex flex-wrap align-items-center my-2">
         @{
             string url = Url.Action("EnterDirectory", "Home") + "?folderIDPath=";
             for (int i = 0; i < Model.FolderPath.Count; i++)
             {
                 url += "/" + Model.FolderPath[i].ID;
-                <a href="@url" class="btn btn-secondary me-1">
+                <a href="@url" class="btn btn-secondary btn-sm me-1">
                     /@Model.FolderPath[i].Name
                 </a>
             }
-            <div class="rounded border bg-light px-1 py-2 me-2">
-                /@Model.CurrFolder.Name - @((Model.CurrFolder.Size / 1048576.0).ToString("F2")) MB - Owner: @Model.CurrFolder.Owner
+            string currFolderDisplay = $"/{Model.CurrFolder.Name}";
+            if (Model.CurrFolder.ID != ViewBag.SharedWithMeID)
+            {
+                currFolderDisplay += $" - {(Model.CurrFolder.Size / 1048576.0).ToString("F2")} MB - Owner: {Model.CurrFolderOwnerName}";
+            }
+            <div class="rounded border bg-light p-1">
+                @currFolderDisplay
             </div>
             currentUrl = url + "/" + Model.CurrFolder.ID;
         }
     </div>
 
     @*  CREATE FOLDER AND UPLOAD BUTTON  *@
-    <div class="d-flex align-items-center my-2">
-        <div class="rounded border bg-light px-1 py-2 me-3">
-            <input type="text" id="newFolderName" placeholder="Enter new folder name" />
-            <button onclick="createFolder()">Create Folder</button>
-        </div>
+    @if (Model.CurrFolder.ID != ViewBag.SharedWithMeID)
+    {
+        <div class="d-flex align-items-center my-2">
+            <div class="rounded border bg-light px-1 py-2 me-3">
+                <input type="text" id="newFolderName" placeholder="Enter new folder name" />
+                <button class="btn btn-primary btn-sm" onclick="createFolder()">
+                    <i class="bi bi-folder-plus"></i>
+                    Create Folder
+                </button>
+            </div>
 
-        <div class="text-center">
-            <label for="fileInput" class="btn btn-primary">
-                <i class="bi bi-upload"></i> Upload Images
-            </label>
-            <input type="file" id="fileInput" multiple accept="image/*" style="display: none;" onchange="uploadFiles(this.files)">
+            <div class="text-center">
+                <label for="fileInput" class="btn btn-primary">
+                    <i class="bi bi-cloud-upload"></i>
+                    Upload Images
+                </label>
+                <input type="file" id="fileInput" multiple accept="image/*" style="display: none;" onchange="uploadFiles(this.files)">
+            </div>
         </div>
-    </div>
+    }
 
     @*  FOLDERS AND IMAGES  *@
-    <div id="folderContainer" class="d-flex flex-column my-1">
+    <div id="folderContainer" class="d-flex flex-wrap my-1">
     </div>
-    <div id="imageContainer" class="d-flex flex-column my-1">
+    <div id="imageContainer" class="d-flex flex-wrap my-1">
     </div>
 
     @*  UPLOAD PROGRESS MODAL  *@
@@ -73,6 +85,7 @@
                 </div>
                 <div class="modal-body text-center">
                     <img id="modalImage" src="" class="img-fluid" style="max-height: 80vh; width: auto;" />
+                    <p id="imagePreviewText" class="mt-2"></p>
                 </div>
             </div>
         </div>
@@ -131,7 +144,7 @@
                 if (data.success) {
                     console.log(data.result);
                     Object.entries(data.result["Subfolders"]).forEach(([id, dict]) => {
-                        FOLDER_DIV.innerHTML += createHTMLSubfolder(id, dict["Name"], dict["Size"], dict["Owner"]);
+                        FOLDER_DIV.innerHTML += createHTMLSubfolder(id, dict["Name"], dict["Size"], dict["OwnerID"], dict["OwnerName"]);
                         numItems++;
                     });
                     Object.entries(data.result["Images"]).forEach(([id, dict]) => {
@@ -146,30 +159,30 @@
         console.log(`${numItems - prevNumItems} items loaded`);
     }
 
-    function createHTMLSubfolder(id, name, size, owner) {
+    function createHTMLSubfolder(id, name, size, ownerid, ownername) {
         return `
-        <div id="${id}" class="d-flex rounded border my-1 py-2 bg-light">
-            <a href="@(currentUrl)/${id}" class="d-flex flex-grow-1 text-decoration-none" style="min-width: 0;">
-                <div class="d-flex align-items-center" style="min-width: 0;">
-                    <div class="d-flex flex-grow-1 align-items-center mx-1">
+        <div id="${id}" class="d-flex flex-column rounded border m-1 p-1 bg-light">
+            <a href="@(currentUrl)/${id}" class="d-flex text-decoration-none">
+                <div class="d-flex flex-column align-items-center">
+                    <div class="d-flex align-items-center mx-1">
                         <i class="bi bi-folder-fill text-warning fs-3 mx-2"></i>
                         /${name}
                     </div>
-                    <div class="mx-2 text-body" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    <div class="mx-2 text-body">
                         ${size}
                     </div>
-                    <div class="mx-2 text-body" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        Owner: ${owner}
+                    <div class="mx-2 text-body">
+                        Owner: ${ownername}
                     </div>
                 </div>
             </a>
-            ${owner == "@(Model.Username)" ? `
-            <div class="d-flex align-items-center me-3">
+            ${ownerid == "@(Model.UserID)" ? `
+            <div class="d-flex align-items-center justify-content-center m-1">
                 <button class="btn btn-outline-primary btn-sm" onclick="openShareModal('${id}', '${name}')">
                     Share
                 </button>
             </div>
-            <div class="d-flex align-items-center me-2">
+            <div class="d-flex align-items-center justify-content-center m-1">
                 <button class="d-flex btn btn-danger btn-sm" onclick="deleteFolder('${id}')">
                     <i class="bi bi-trash"></i> Delete
                 </button>
@@ -180,32 +193,37 @@
 
     function createHTMLImage(id, name, size) {
         return `
-        <div id="${id}" class="d-flex rounded border my-1 py-2 bg-light">
-            <a href="javascript:void(0);" onclick="openImagePreview('${id}', '${name}')" class="d-flex flex-grow-1 text-decoration-none" style="min-width: 0; color: inherit; font: inherit;">
-                <div class="d-flex align-items-center" style="min-width: 0;">
-                    <img class="d-flex flex-grow-1 img-thumbnail ms-1" src="@Url.Action("GetThumbnail", "Home")?imageID=${id}" style="height: auto; width: 128px;" alt="Image"/>
-                    <div class="d-flex flex-column mx-2" style="min-width:0;">
-                        <div class="my-1" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            ${name}
-                        </div>
-                        <div class="my-1" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            ${size}
-                        </div>
+        <div id="${id}" class="d-flex flex-column rounded border m-1 p-1 bg-light">
+            <a href="javascript:void(0);" onclick="openImagePreview('${id}', '${name}')" class="d-flex text-decoration-none" style="color: inherit; font: inherit;">
+                <div class="d-flex flex-column align-items-center">
+                    <img class="d-flex img-thumbnail ms-1" src="@Url.Action("GetThumbnail", "Home")?imageID=${id}" style="height: auto; width: 128px;" alt="Image"/>
+                    <div class="my-1">
+                        ${name}
+                    </div>
+                    <div class="my-1">
+                        ${size}
                     </div>
                 </div>
             </a>
-            ${"@Model.CurrFolder.Owner" == "@Model.Username" ? `
-            <div class="d-flex align-items-center me-3">
-                <a href="@(Url.Action("DownloadImage", "Home"))?imageID=${id}" class="d-flex btn btn-primary">
+            <div class="d-flex align-items-center justify-content-center m-1">
+                <button class="btn btn-primary btn-sm" onclick="openDownloadImage('${id}', '${name}')">
                     <i class="bi bi-download"></i> Download
-                </a>
+                </button>
             </div>
-            <div class="d-flex align-items-center me-2">
-                <button class="d-flex btn btn-danger btn-sm" onclick="deleteImage('${id}')">
+            ${"@Model.CurrFolder.OwnerID" == "@Model.UserID" ? `
+            <div class="d-flex align-items-center justify-content-center m-1">
+                <button class="btn btn-danger btn-sm" onclick="deleteImage('${id}')">
                     <i class="bi bi-trash"></i> Delete
                 </button>
             </div>` : "" }
         </div>`;
+    }
+
+    function openDownloadImage(imageID, imageName) {
+        document.getElementById("modalImage").src = "@Url.Action("DownloadImage", "Home")" + "?imageID=" + imageID;
+        document.getElementById("imagePreviewTitle").textContent = imageName;
+        document.getElementById("imagePreviewText").textContent = "To download: Right Click or Tap and Hold, then select save";
+        new bootstrap.Modal(document.getElementById("imagePreviewModal")).show();
     }
 
     async function openShareModal(folderID, folderName) {
@@ -261,9 +279,9 @@
 
     function openImagePreview(imageID, imageName) {
         document.getElementById("modalImage").src = "@Url.Action("GetImagePreview", "Home")" + "?imageID=" + imageID;
-        var modal = new bootstrap.Modal(document.getElementById("imagePreviewModal"));
         document.getElementById("imagePreviewTitle").textContent = imageName;
-        modal.show();
+        document.getElementById("imagePreviewText").textContent = "";
+        new bootstrap.Modal(document.getElementById("imagePreviewModal")).show();
     }
 
     async function uploadFiles(files) {
@@ -358,7 +376,7 @@
 
             const result = await response.json();
             if (result.success) {
-                FOLDER_DIV.innerHTML += createHTMLSubfolder(result.id, result.name, "0.00 MB", result.owner);
+                FOLDER_DIV.innerHTML += createHTMLSubfolder(result.id, result.name, "0.00 KB", result.ownerid, result.ownername);
                 totalItems++;
                 numItems++;
                 folderNameInput.value = "";
@@ -395,25 +413,27 @@
     }
 
     async function deleteFolder(folderID) {
-        const formData = new FormData();
-        formData.append("folderID", folderID);
+        if (confirm("Are you sure you want to delete this folder")) {
+            const formData = new FormData();
+            formData.append("folderID", folderID);
 
-        try {
-            const response = await fetch(`/Home/DeleteFolder`, {
-                method: "POST",
-                body: formData
-            });
+            try {
+                const response = await fetch(`/Home/DeleteFolder`, {
+                    method: "POST",
+                    body: formData
+                });
 
-            const result = await response.json();
-            if (result.success) {
-                document.getElementById(folderID).remove();
-                numItems--;
-                totalItems--;
-            } else {
-                alert("Delete folder failed! " + result.message);
+                const result = await response.json();
+                if (result.success) {
+                    document.getElementById(folderID).remove();
+                    numItems--;
+                    totalItems--;
+                } else {
+                    alert("Delete folder failed! " + result.message);
+                }
+            } catch (error) {
+                alert("An error occurred: " + error.message);
             }
-        } catch (error) {
-            alert("An error occurred: " + error.message);
         }
     }
 </script>

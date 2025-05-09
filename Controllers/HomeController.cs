@@ -16,17 +16,17 @@ public class HomeController(ApplicationDbContext context) : Controller
     [HttpGet]
     public async Task<IActionResult> EnterDirectory(string folderIDPath = "")
     {
-        // Get current username
-        string? username = HttpContext.Session.GetString("Username");
-        if(string.IsNullOrEmpty(username))
+        // Get current userID
+        string? userID = HttpContext.Session.GetString("UserID");
+        if (string.IsNullOrEmpty(userID))
         {
             return RedirectToAction("Login", "Account"); // Redirect to login if not logged in
         }
 
-        DBUser? dBUser = await _context.Users.FindAsync(username);
+        DBUser? dBUser = await _context.Users.FindAsync(userID);
         if (dBUser is null)
         {
-            return NotFound($"Username not in database: {username}");
+            return NotFound($"UserID not in database: {userID}");
         }
 
         List<DBFolder> folderPath = [];
@@ -50,13 +50,19 @@ public class HomeController(ApplicationDbContext context) : Controller
         DBFolder currFolder = folderPath.Last();
         folderPath.RemoveAt(folderPath.Count - 1);
 
+        string currFolderOwnerName = await _context.Users
+            .Where(u => u.ID == currFolder.OwnerID)
+            .Select(u => u.Username)
+            .FirstOrDefaultAsync() ?? "";
 
         HomeViewModel model = new()
         {
-            Username = username,
+            UserID = dBUser.ID,
             FolderPath = folderPath,
             CurrFolder = currFolder,
+            CurrFolderOwnerName = currFolderOwnerName,
         };
+        ViewBag.Username = dBUser.Username;
         ViewBag.RootID = dBUser.RootID;
         ViewBag.SharedWithMeID = dBUser.SharedWithMeID;
         return View("Index", model);
@@ -74,8 +80,7 @@ public class HomeController(ApplicationDbContext context) : Controller
             }
 
             // Check for valid user
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+            if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
             {
                 return Json(new { success = false, message = "User not authenticated" });
             }
@@ -86,11 +91,16 @@ public class HomeController(ApplicationDbContext context) : Controller
                 return Json(new { success = false, message = $"Folder not in database: {folderID}" });
             }
 
+            if (InvalidChars.Any(fileName.Contains))
+            {
+                return Json(new { success = false, message = $"Image name cannot contain: {string.Join(", ", InvalidChars.ToCharArray())}" });
+            }
+
             if (chunkIndex == 0 && await _context.Images
                                         .Where(i => currFolder.Images.Contains(i.ID))
                                         .AnyAsync(i => i.Name == fileName))
             {
-                return Json(new { success = false, message = $"Image with this name already exists: {fileName}"});
+                return Json(new { success = false, message = $"Image with this name already exists: {fileName}" });
             }
 
             FileInfo tempFilePath = new(Path.Combine(ImagesDirectory, fileName + ".temp"));
@@ -102,17 +112,14 @@ public class HomeController(ApplicationDbContext context) : Controller
             // Check if this was the last chunk
             if (chunkIndex == totalChunks - 1)
             {
-                DBImage dBImage = new ()
+                DBImage dBImage = new()
                 {
                     ID = Guid.NewGuid().ToString() + Path.GetExtension(fileName),
                     Name = fileName,
                     Size = tempFilePath.Length,
                 };
-                currFolder.Size += dBImage.Size;
                 currFolder.Images.Add(dBImage.ID);
                 _context.Images.Add(dBImage);
-                _context.Folders.Update(currFolder);
-                currFolder = await _context.Folders.FindAsync(currFolder.ParentFolderID);
                 while (currFolder is not null)
                 {
                     currFolder.Size += dBImage.Size;
@@ -129,7 +136,7 @@ public class HomeController(ApplicationDbContext context) : Controller
         catch (Exception ex)
         {
             Console.WriteLine($"Error uploading chunk: {ex.Message}");
-            return Json(new { success = false, message = $"Error: {ex.Message}"});
+            return Json(new { success = false, message = $"Error: {ex.Message}" });
         }
     }
 
@@ -138,8 +145,7 @@ public class HomeController(ApplicationDbContext context) : Controller
     {
         try
         {
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+            if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
             {
                 return Json(new { success = false, message = "User not authenticated" });
             }
@@ -150,44 +156,47 @@ public class HomeController(ApplicationDbContext context) : Controller
                 return Json(new { success = false, message = $"Parent folder does not exist: {folderID}" });
             }
 
-            if (folderName.Any(InvalidChars.Contains))
+            if (InvalidChars.Any(folderName.Contains))
             {
-                return Json(new { success = false, message = "Folder name cannot have " + string.Join(", ", InvalidChars.ToCharArray()) });
+                return Json(new { success = false, message = $"Folder name cannot contain: {string.Join(", ", InvalidChars.ToCharArray())}" });
             }
 
             if (await _context.Folders
                 .Where(f => parentFolder.Subfolders.Contains(f.ID))
                 .AnyAsync(f => f.Name == folderName))
             {
-                return Json(new { success = false, message = $"Folder with this name already exists: {folderName}"});
+                return Json(new { success = false, message = $"Folder with this name already exists: {folderName}" });
             }
 
             DBFolder newFolder = new()
             {
                 ID = Guid.NewGuid().ToString(),
                 Name = folderName,
-                Owner = parentFolder.Owner,
+                OwnerID = parentFolder.OwnerID,
                 Size = 0.0,
                 ParentFolderID = parentFolder.ID,
             };
+            string ownerName = await _context.Users
+                .Where(u => u.ID == newFolder.OwnerID)
+                .Select(u => u.Username)
+                .FirstOrDefaultAsync() ?? "";
             _context.Folders.Add(newFolder);
             parentFolder.Subfolders.Add(newFolder.ID);
             _context.Folders.Update(parentFolder);
             await _context.SaveChangesAsync();
 
-            return Json(new { success = true, id = newFolder.ID, name = newFolder.Name, owner = newFolder.Owner });
+            return Json(new { success = true, id = newFolder.ID, name = newFolder.Name, ownerid = newFolder.OwnerID, ownername = ownerName });
         }
         catch (Exception ex)
         {
-            return Json(new { success = false, message = ex.Message});
+            return Json(new { success = false, message = ex.Message });
         }
     }
 
     [HttpGet]
     public async Task<IActionResult> DownloadImage(string imageID)
     {
-        string? username = HttpContext.Session.GetString("Username");
-        if (string.IsNullOrEmpty(username))
+        if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
         {
             return Unauthorized();
         }
@@ -213,8 +222,7 @@ public class HomeController(ApplicationDbContext context) : Controller
     {
         try
         {
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+            if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
             {
                 return Json(new { success = false, message = "User not authenticated" });
             }
@@ -228,24 +236,19 @@ public class HomeController(ApplicationDbContext context) : Controller
             DBFolder? currFolder = await _context.Folders.FindAsync(folderID);
             if (currFolder is null)
             {
-                return Json(new { success = false, message = $"Folder not in database: {folderID}"});
-            }
-            
-            if (username != currFolder.Owner)
-            {
-                return Json(new { success = false, message = $"Cannot delete image because the current folder belongs to: {currFolder.Owner}"});
+                return Json(new { success = false, message = $"Folder not in database: {folderID}" });
             }
 
             DBImage? dBImage = await _context.Images.FindAsync(imageID);
             if (dBImage is null)
             {
-                return Json(new { success = false, message = $"Image not in database: {imageID}"});
+                return Json(new { success = false, message = $"Image not in database: {imageID}" });
             }
 
             currFolder.Images.Remove(dBImage.ID);
             _context.Images.Remove(dBImage);
 
-            while(currFolder is not null)
+            while (currFolder is not null)
             {
                 currFolder.Size -= dBImage.Size;
                 _context.Folders.Update(currFolder);
@@ -274,7 +277,7 @@ public class HomeController(ApplicationDbContext context) : Controller
             }
 
             byte[] imageData;
-            using(Image image = Image.NewFromFile(imagePath.FullName))
+            using (Image image = Image.NewFromFile(imagePath.FullName))
             {
                 if (256 < image.Width && 256 < image.Height)
                 {
@@ -299,8 +302,7 @@ public class HomeController(ApplicationDbContext context) : Controller
     {
         try
         {
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+            if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
             {
                 return Json(new { success = false, message = "User not authenticated" });
             }
@@ -311,15 +313,10 @@ public class HomeController(ApplicationDbContext context) : Controller
                 return Json(new { success = false, message = $"Folder to delete not in database: {folderID}" });
             }
 
-            if (username != targetFolder.Owner)
-            {
-                return Json(new { success = false, message = $"Cannot delete because this folder belongs to: {targetFolder.Owner}"});
-            }
-
             DBFolder? parentFolder = await _context.Folders.FindAsync(targetFolder.ParentFolderID);
             if (parentFolder is null)
             {
-                return Json(new { success = false, message = $"Parent folder not in database: {targetFolder.ParentFolderID}"});
+                return Json(new { success = false, message = $"Parent folder not in database: {targetFolder.ParentFolderID}" });
             }
 
             parentFolder.Subfolders.Remove(targetFolder.ID);
@@ -330,7 +327,7 @@ public class HomeController(ApplicationDbContext context) : Controller
                 _context.Folders.Update(parentFolder);
                 parentFolder = await _context.Folders.FindAsync(parentFolder.ParentFolderID);
             }
-            RecursiveDeleteFolder(targetFolder.ID);
+            await RecursiveDeleteFolder(_context, targetFolder.ID);
             await _context.SaveChangesAsync();
             return Json(new { success = true });
         }
@@ -340,31 +337,28 @@ public class HomeController(ApplicationDbContext context) : Controller
         }
     }
 
-    private async void RecursiveDeleteFolder(string folderID)
+    public static async Task RecursiveDeleteFolder(ApplicationDbContext context, string folderID)
     {
         // get folder
-        DBFolder? dBFolder = await _context.Folders.FindAsync(folderID);
+        DBFolder? dBFolder = await context.Folders.FindAsync(folderID);
         if (dBFolder is null) { return; }
 
         // go thru each subfolder in current folder
-        dBFolder.Subfolders.ForEach(RecursiveDeleteFolder);
+        dBFolder.Subfolders.ForEach(async subfolder => await RecursiveDeleteFolder(context, subfolder));
 
         // unshare this folder with all shared users
-        List<string> sharedFolderIDs = await _context.Users
-            .Where(u => dBFolder.SharedWith.Contains(u.Username))
+        List<string> sharedFolderIDs = await context.Users
+            .Where(u => dBFolder.SharedWith.Contains(u.ID))
             .Select(u => u.SharedWithMeID)
             .ToListAsync();
-        List<DBFolder> sharedFolders = await _context.Folders
+        List<DBFolder> sharedFolders = await context.Folders
             .Where(f => sharedFolderIDs.Contains(f.ID))
             .ToListAsync();
-        sharedFolders.ForEach(sharedFolder =>
-        {
-            sharedFolder.Subfolders.Remove(folderID);
-        });
-        _context.Folders.UpdateRange(sharedFolders);
+        sharedFolders.ForEach(sharedFolder => sharedFolder.Subfolders.Remove(folderID));
+        context.Folders.UpdateRange(sharedFolders);
 
         // delete images in current folder
-        await _context.Images.Where(i => dBFolder.Images.Contains(i.ID)).ExecuteDeleteAsync();
+        await context.Images.Where(i => dBFolder.Images.Contains(i.ID)).ExecuteDeleteAsync();
         foreach (string imageID in dBFolder.Images)
         {
             FileInfo fileInfo = new(Path.Combine(ImagesDirectory, imageID));
@@ -372,27 +366,7 @@ public class HomeController(ApplicationDbContext context) : Controller
         }
 
         // delete current folder
-        _context.Folders.Remove(dBFolder);
-    }
-
-    [HttpGet]
-    public IActionResult GetThumbnail(string imageID)
-    {
-        try
-        {
-            FileInfo imagePath = new(Path.Combine(ImagesDirectory, imageID));
-            if (!imagePath.Exists)
-            {
-                return NotFound();
-            }
-
-            using var thumbnail = Image.Thumbnail(Path.Combine(ImagesDirectory, imageID), 128);
-            return File(thumbnail.WebpsaveBuffer(), "image/webp");
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, ex.Message);
-        }
+        context.Folders.Remove(dBFolder);
     }
 
     [HttpGet]
@@ -400,10 +374,10 @@ public class HomeController(ApplicationDbContext context) : Controller
     {
         try
         {
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+            string? userID = HttpContext.Session.GetString("UserID");
+            if (string.IsNullOrEmpty(userID))
             {
-                return Json(new { success = false, message = "User not logged in"});
+                return Json(new { success = false, message = "User not logged in" });
             }
 
             DBFolder? dBFolder = await _context.Folders.FindAsync(folderID);
@@ -428,16 +402,19 @@ public class HomeController(ApplicationDbContext context) : Controller
 
             var subfolderInfo = await _context.Folders
                 .Where(f => subfolders.Keys.Contains(f.ID))
-                .Select(f => new { f.ID, f.Name, f.Size, f.Owner })
+                .Select(f => new { f.ID, f.Name, f.Size, f.OwnerID })
                 .ToListAsync();
-            subfolderInfo.ForEach(subfolder =>
+            subfolderInfo.ForEach(async subfolder =>
             {
-                double sizeMB = subfolder.Size / 1024.0 / 1024.0;
-                double sizeGB = subfolder.Size / 1024.0 / 1024.0 / 1024.0;
-                
                 subfolders[subfolder.ID].Add("Name", subfolder.Name);
-                subfolders[subfolder.ID].Add("Size", 1024.0 < sizeMB ? sizeGB.ToString("F2") + " GB" : sizeMB.ToString("F2") + " MB");
-                subfolders[subfolder.ID].Add("Owner", subfolder.Owner);
+                subfolders[subfolder.ID].Add("Size", GetDisplaySize(subfolder.Size));
+                subfolders[subfolder.ID].Add("OwnerID", subfolder.OwnerID);
+                subfolders[subfolder.ID].Add("OwnerName",
+                    await _context.Users
+                        .Where(u => u.ID == subfolder.OwnerID)
+                        .Select(u => u.Username)
+                        .FirstOrDefaultAsync() ?? ""
+                );
             });
 
             var imageInfo = await _context.Images
@@ -447,7 +424,7 @@ public class HomeController(ApplicationDbContext context) : Controller
             imageInfo.ForEach(image =>
             {
                 images[image.ID].Add("Name", image.Name);
-                images[image.ID].Add("Size", (image.Size / (1024 * 1024)).ToString("F2") + " MB");
+                images[image.ID].Add("Size", GetDisplaySize(image.Size));
             });
 
             var result = new Dictionary<string, Dictionary<string, Dictionary<string, string>>>() {
@@ -463,33 +440,48 @@ public class HomeController(ApplicationDbContext context) : Controller
     }
 
     [HttpGet]
+    public IActionResult GetThumbnail(string imageID)
+    {
+        try
+        {
+            FileInfo imagePath = new(Path.Combine(ImagesDirectory, imageID));
+            if (!imagePath.Exists)
+            {
+                return NotFound();
+            }
+
+            using var thumbnail = Image.Thumbnail(Path.Combine(ImagesDirectory, imageID), 128);
+            return File(thumbnail.WebpsaveBuffer(), "image/webp");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    [HttpGet]
     public async Task<IActionResult> GetUsersForSharing(string folderID)
     {
         try
         {
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+            string? userID = HttpContext.Session.GetString("UserID");
+            if (string.IsNullOrEmpty(userID))
             {
-                return Json(new { success = false, message = "User not logged in"});
+                return Json(new { success = false, message = "User not logged in" });
             }
 
-            var sharedWithFolder = await _context.Folders
+            var sharedWithList = await _context.Folders
                 .Where(f => f.ID == folderID)
-                .Select(f => new { f.Owner, f.SharedWith })
+                .Select(f => f.SharedWith)
                 .FirstAsync();
-            if (sharedWithFolder is null)
+            if (sharedWithList is null)
             {
                 return Json(new { success = false, message = $"Folder not in database: {folderID}" });
             }
 
-            if (sharedWithFolder.Owner != username)
-            {
-                return Json(new { success = false, message = $"Only Owner: {sharedWithFolder.Owner} can share this folder"});
-            }
-
             var usersSharedInfo = await _context.Users
-                .Where(u => u.Username != username)
-                .Select(u => new { u.Username, isShared = sharedWithFolder.SharedWith.Contains(u.Username)})
+                .Where(u => u.ID != userID)
+                .Select(u => new { u.Username, isShared = sharedWithList.Contains(u.ID) })
                 .ToListAsync();
 
             Dictionary<string, bool> result = usersSharedInfo.ToDictionary(
@@ -508,14 +500,16 @@ public class HomeController(ApplicationDbContext context) : Controller
     [HttpPost]
     public async Task<IActionResult> ShareFolderWithUser(string folderID, string otherUsername)
     {
-        try {
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+        try
+        {
+            if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
             {
                 return Json(new { success = false, message = "User not authenticated" });
             }
 
-            DBUser? dBUser = await _context.Users.FindAsync(otherUsername);
+            DBUser? dBUser = await _context.Users
+                .Where(u => u.Username == otherUsername)
+                .FirstOrDefaultAsync();
             if (dBUser is null)
             {
                 return Json(new { success = false, message = "User to share with not in database" });
@@ -530,17 +524,17 @@ public class HomeController(ApplicationDbContext context) : Controller
             DBFolder? usersSharedWithMeFolder = await _context.Folders.FindAsync(dBUser.SharedWithMeID);
             if (usersSharedWithMeFolder is null)
             {
-                return Json(new { success = false, message = "User does not have a Shared With Me folder"});
+                return Json(new { success = false, message = "User does not have a Shared With Me folder" });
             }
-            
-            if (dBFolder.SharedWith.Contains(dBUser.Username) ||
+
+            if (dBFolder.SharedWith.Contains(dBUser.ID) ||
                 usersSharedWithMeFolder.Subfolders.Contains(dBFolder.ID))
             {
                 return Json(new { success = false, message = "User to share with is already shared with" });
             }
 
             usersSharedWithMeFolder.Subfolders.Add(dBFolder.ID);
-            dBFolder.SharedWith.Add(dBUser.Username);
+            dBFolder.SharedWith.Add(dBUser.ID);
             _context.Folders.UpdateRange(usersSharedWithMeFolder, dBFolder);
             await _context.SaveChangesAsync();
 
@@ -555,14 +549,16 @@ public class HomeController(ApplicationDbContext context) : Controller
     [HttpPost]
     public async Task<IActionResult> UnshareFolderWithUser(string folderID, string otherUsername)
     {
-        try {
-            string? username = HttpContext.Session.GetString("Username");
-            if (string.IsNullOrEmpty(username))
+        try
+        {
+            if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
             {
                 return Json(new { success = false, message = "User not authenticated" });
             }
 
-            DBUser? dBUser = await _context.Users.FindAsync(otherUsername);
+            DBUser? dBUser = await _context.Users
+                .Where(u => u.Username == otherUsername)
+                .FirstOrDefaultAsync();
             if (dBUser is null)
             {
                 return Json(new { success = false, message = "User to unshare with not in database" });
@@ -577,20 +573,20 @@ public class HomeController(ApplicationDbContext context) : Controller
             DBFolder? usersSharedWithMeFolder = await _context.Folders.FindAsync(dBUser.SharedWithMeID);
             if (usersSharedWithMeFolder is null)
             {
-                return Json(new { success = false, message = "User does not have a Shared With Me folder"});
+                return Json(new { success = false, message = "User does not have a Shared With Me folder" });
             }
 
-            if (!dBFolder.SharedWith.Contains(dBUser.Username) &&
+            if (!dBFolder.SharedWith.Contains(dBUser.ID) &&
                 !usersSharedWithMeFolder.Subfolders.Contains(dBFolder.ID))
             {
                 return Json(new { success = false, message = "User to unshare with hasn't been shared with" });
             }
 
             usersSharedWithMeFolder.Subfolders.Remove(dBFolder.ID);
-            dBFolder.SharedWith.Remove(dBUser.Username);
+            dBFolder.SharedWith.Remove(dBUser.ID);
             _context.Folders.UpdateRange(usersSharedWithMeFolder, dBFolder);
             await _context.SaveChangesAsync();
-            
+
             return Json(new { success = true });
         }
         catch (Exception ex)
@@ -599,9 +595,23 @@ public class HomeController(ApplicationDbContext context) : Controller
         }
     }
 
+    public static string GetDisplaySize(double sizeInBytes)
+    {
+        double size = sizeInBytes / 1024.0;
+        if (size < 1024.0) return $"{size:F2} KB";
+
+        size /= 1024.0;
+        if (size < 1024.0) return $"{size:F2} MB";
+
+        size /= 1024.0;
+        return $"{size:F2} GB";
+
+    }
+
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {
         return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
     }
+
 }

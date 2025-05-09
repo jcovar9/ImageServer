@@ -13,7 +13,7 @@ namespace JonahsImageServer.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "9.0.2");
+            modelBuilder.HasAnnotation("ProductVersion", "9.0.4");
 
             modelBuilder.Entity("JonahsImageServer.Models.DBFolder", b =>
                 {
@@ -28,7 +28,7 @@ namespace JonahsImageServer.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Owner")
+                    b.Property<string>("OwnerID")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -70,7 +70,7 @@ namespace JonahsImageServer.Migrations
 
             modelBuilder.Entity("JonahsImageServer.Models.DBUser", b =>
                 {
-                    b.Property<string>("Username")
+                    b.Property<string>("ID")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PasswordHash")
@@ -85,7 +85,11 @@ namespace JonahsImageServer.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("Username");
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ID");
 
                     b.ToTable("Users");
                 });
