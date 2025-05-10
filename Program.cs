@@ -29,16 +29,16 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
+    //app.UseHsts();
 }
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseStaticFiles(new StaticFileOptions
 {
     RequestPath = "/imageserver"
 });
 app.UseRouting();
 app.UseSession();
-app.UseAuthorization();
+//app.UseAuthorization();
 //app.MapControllers();
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=EnterDirectory}/{id?}");
 
