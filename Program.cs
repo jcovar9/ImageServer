@@ -23,7 +23,6 @@ builder.Services.AddResponseCompression(options =>
 
 var app = builder.Build();
 
-app.UsePathBase("/imageserver");
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -31,15 +30,12 @@ if (!app.Environment.IsDevelopment())
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     //app.UseHsts();
 }
-//app.UseHttpsRedirection();
-app.UseStaticFiles(new StaticFileOptions
-{
-    RequestPath = "/imageserver"
-});
+app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseRouting();
 app.UseSession();
-//app.UseAuthorization();
-//app.MapControllers();
+app.UseAuthorization();
+app.MapControllers();
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=EnterDirectory}/{id?}");
 
 app.Run();
