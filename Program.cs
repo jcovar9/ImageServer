@@ -21,6 +21,8 @@ builder.Services.AddResponseCompression(options =>
     options.Providers.Add<GzipCompressionProvider>();
 });
 
+Console.WriteLine($"***VipsForeignLoadHeif: {NetVips.NetVips.TypeFromName("VipsForeignLoadHeif")}");
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
