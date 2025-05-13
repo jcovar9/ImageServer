@@ -3,6 +3,9 @@ using Microsoft.EntityFrameworkCore;
 
 Directory.CreateDirectory("wwwroot/uploads");
 
+Environment.SetEnvironmentVariable("VIPS_PLUGIN_PATH", "/src/libvips/build/libvips");
+Environment.SetEnvironmentVariable("LD_LIBRARY_PATH", "/src/libvips/build/libvips");
+
 var builder = WebApplication.CreateBuilder(args);
 
 NetVips.Cache.MaxFiles = 0;
