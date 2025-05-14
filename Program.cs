@@ -13,7 +13,7 @@ NetVips.Cache.Max = 0;
 builder.Services.AddControllersWithViews();
 builder.Services.AddSession();
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite("Data Source=" + Path.Combine("publish", "data", "localdb.db")));
+    options.UseSqlite("Data Source=/publish/data/localdb.db"));
 
 builder.Services.AddResponseCompression(options =>
 {
