@@ -3,10 +3,6 @@ using Microsoft.EntityFrameworkCore;
 
 Directory.CreateDirectory("wwwroot/uploads");
 
-Environment.SetEnvironmentVariable("VIPS_PLUGIN_PATH", "/src/libvips/build/libvips");
-Environment.SetEnvironmentVariable("LD_LIBRARY_PATH", "/src/libvips/build/libvips");
-
-
 var builder = WebApplication.CreateBuilder(args);
 
 NetVips.Cache.MaxFiles = 0;
@@ -26,9 +22,7 @@ builder.Services.AddResponseCompression(options =>
 });
 
 Console.WriteLine($"***VipsForeignLoadHeif: {NetVips.NetVips.TypeFromName("VipsForeignLoadHeif")}");
-Console.WriteLine($"***NetVips Version: {NetVips.NetVips.Version}");
-Console.WriteLine($"***VIPS_PLUGIN_PATH: {Environment.GetEnvironmentVariable("VIPS_PLUGIN_PATH")}");
-Console.WriteLine($"***LD_LIBRARY_PATH: {Environment.GetEnvironmentVariable("LD_LIBRARY_PATH")}");
+Console.WriteLine($"***NetVips Version: {NetVips.NetVips.Version(0)} : {NetVips.NetVips.Version(1)}");
 
 var app = builder.Build();
 
