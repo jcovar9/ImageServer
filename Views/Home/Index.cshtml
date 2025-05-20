@@ -20,7 +20,7 @@
             string currFolderDisplay = $"/{Model.CurrFolder.Name}";
             if (Model.CurrFolder.ID != ViewBag.SharedWithMeID)
             {
-                currFolderDisplay += $" - {(Model.CurrFolder.Size / 1048576.0).ToString("F2")} MB - Owner: {Model.CurrFolderOwnerName}";
+                currFolderDisplay += $" - {Model.CurrFolderSizeDisplay} - Owner: {Model.CurrFolderOwnerName}";
             }
             <div class="rounded border bg-light p-1">
                 @currFolderDisplay
@@ -289,70 +289,92 @@
             alert("No images selected for upload.");
             return;
         }
-        const chunkSize = 5 * 1024 * 1024; // 5MB
 
         // Show the upload modal
         new bootstrap.Modal(document.getElementById("uploadProgressModal")).show();
         var progressTitle = document.getElementById("uploadProgressTitle");
+        progressTitle.textContent = `Uploading ${files.length} images...`;
         var progressBar = document.getElementById("uploadProgressBar");
+        progressBar.style.width = "0%";
         var progressText = document.getElementById("uploadProgressText");
-        progressText.innerHTML = "";
+        progressText.textContent = "";
         var closeBtn = document.getElementById("uploadProgressCloseBtn");
         closeBtn.disabled = true;
-        let successFiles = 0;
-        progressTitle.textContent = `Uploaded ${successFiles}/${files.length} files successfully`;
+        let completed = 0;
+        let successfulUploads = 0;
 
-        for (const file of files) {
-            const totalChunks = Math.ceil(file.size / chunkSize);
-            let success = true;
+        const updateProgress = () => {
+            const progressPercent = Math.round((completed / files.length) * 100);
+            progressBar.style.width = `${progressPercent}%`;
+        };
 
-            for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-                const start = chunkIndex * chunkSize;
-                const end = Math.min(start + chunkSize, file.size);
-                const chunk = file.slice(start, end);
-
-                const formData = new FormData();
-                formData.append("folderID", CURR_FOLDER_ID);
-                formData.append("chunk", chunk);
-                formData.append("fileName", file.name);
-                formData.append("chunkIndex", chunkIndex);
-                formData.append("totalChunks", totalChunks);
-
-                const response = await fetch(`/Home/UploadChunk`, {
-                    method: "POST",
-                    body: formData
-                });
-                const responseText = await response.text();
-
-                try {
-                    const result = JSON.parse(responseText);
-
-                    if (!result.success) {
-                        progressText.innerHTML += `${file.name} failed to upload. Server Error: ${result.message}<br>`;
-                        success = false;
-                        break;
-                    }
-                } catch (error) {
-                    progressText.innerHTML += `${file.name} failed to upload. Error: ${responseText}<br>`;
-                    success = false;
-                    break;
-                }
+        const uploadPromises = Array.from(files).map(async (file) => {
+            try {
+                await uploadFile(file);
+                successfulUploads++;
+            } catch (err) {
+                progressText.textContent += `${file.name} failed: ${err.message}\n`;
+            } finally {
+                completed++;
+                updateProgress();
             }
+        });
+        await Promise.allSettled(uploadPromises);
 
-            if (success) {
-                successFiles++;
-                let progressPercent = Math.round((successFiles / files.length) * 100);
-                progressBar.style.width = progressPercent + "%";
-                progressTitle.textContent = `Uploaded ${successFiles}/${files.length} files successfully`;
+        const formData = new FormData();
+        formData.append("folderID", CURR_FOLDER_ID);
+        const finalize = await fetch("/Home/FinalizeUpload", {
+            method: "POST",
+            body: formData
+        });
+        try {
+            const result = await finalize.json();
+            if (!result.success) {
+                alert("Error: " + result.message);
             }
+        } catch (error) {
+            alert("An error occured: " + error.message);
         }
-        progressBar.style.width = "100%";
-        progressText.innerHTML += `Complete!<br>`;
-        progressTitle.textContent = `Uploaded ${successFiles}/${files.length} files successfully`;
-        totalItems += successFiles;
 
+        progressText.textContent += `Complete!\n`;
+        totalItems += successfulUploads;
         closeBtn.disabled = false;
         checkLoadItems();
+    }
+
+    async function uploadFile(file) {
+        const chunkSize = 5 * 1024 * 1024; // 5MB
+        const totalChunks = Math.ceil(file.size / chunkSize);
+
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            const start = chunkIndex * chunkSize;
+            const end = Math.min(start + chunkSize, file.size);
+            const chunk = file.slice(start, end);
+
+            const formData = new FormData();
+            formData.append("folderID", CURR_FOLDER_ID);
+            formData.append("chunk", chunk);
+            formData.append("fileName", file.name);
+            formData.append("chunkIndex", chunkIndex);
+
+            const response = await fetch(`/Home/UploadChunk`, {
+                method: "POST",
+                body: formData
+            });
+            const responseText = await response.text();
+
+            try {
+                const result = JSON.parse(responseText);
+
+                if (!result.success) {
+                    throw new Error(result.message);
+                    break;
+                }
+            } catch (error) {
+                throw new Error(responseText);
+                break;
+            }
+        }
     }
 
     async function createFolder() {

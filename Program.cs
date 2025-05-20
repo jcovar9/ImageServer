@@ -12,8 +12,9 @@ NetVips.Cache.Max = 0;
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 builder.Services.AddSession();
+string dataSource = $"Data Source={(builder.Environment.IsProduction() ? "/publish/data/" : "")}localdb.db";
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite("Data Source=/publish/data/localdb.db"));
+    options.UseSqlite(dataSource));
 
 builder.Services.AddResponseCompression(options =>
 {

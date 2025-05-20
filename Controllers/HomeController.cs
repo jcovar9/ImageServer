@@ -60,6 +60,7 @@ public class HomeController(ApplicationDbContext context) : Controller
             UserID = dBUser.ID,
             FolderPath = folderPath,
             CurrFolder = currFolder,
+            CurrFolderSizeDisplay = GetDisplaySize(currFolder.Size),
             CurrFolderOwnerName = currFolderOwnerName,
         };
         ViewBag.Username = dBUser.Username;
@@ -69,7 +70,7 @@ public class HomeController(ApplicationDbContext context) : Controller
     }
 
     [HttpPost]
-    public async Task<IActionResult> UploadChunk(string folderID, IFormFile chunk, string fileName, int chunkIndex, int totalChunks)
+    public async Task<IActionResult> UploadChunk(string folderID, IFormFile chunk, string fileName, int chunkIndex)
     {
         try
         {
@@ -80,56 +81,40 @@ public class HomeController(ApplicationDbContext context) : Controller
             }
 
             // Check for valid user
-            if (string.IsNullOrEmpty(HttpContext.Session.GetString("UserID")))
+            string? userID = HttpContext.Session.GetString("UserID");
+            if (string.IsNullOrEmpty(userID))
             {
                 return Json(new { success = false, message = "User not authenticated" });
             }
 
-            DBFolder? currFolder = await _context.Folders.FindAsync(folderID);
-            if (currFolder is null)
+            string tempImageDir = Path.Combine(ImagesDirectory, userID);
+            if (chunkIndex == 0)
             {
-                return Json(new { success = false, message = $"Folder not in database: {folderID}" });
+                DBFolder? currFolder = await _context.Folders.FindAsync(folderID);
+                if (currFolder is null)
+                {
+                    return Json(new { success = false, message = $"Folder not in database: {folderID}" });
+                }
+
+                if (InvalidChars.Any(fileName.Contains))
+                {
+                    return Json(new { success = false, message = $"Image name cannot contain: {string.Join(", ", InvalidChars.ToCharArray())}" });
+                }
+
+                if (await _context.Images
+                                    .Where(i => currFolder.Images.Contains(i.ID))
+                                    .AnyAsync(i => i.Name == fileName))
+                {
+                    return Json(new { success = false, message = $"Image with this name already exists: {fileName}" });
+                }
+
+                Directory.CreateDirectory(tempImageDir);
             }
 
-            if (InvalidChars.Any(fileName.Contains))
-            {
-                return Json(new { success = false, message = $"Image name cannot contain: {string.Join(", ", InvalidChars.ToCharArray())}" });
-            }
-
-            if (chunkIndex == 0 && await _context.Images
-                                        .Where(i => currFolder.Images.Contains(i.ID))
-                                        .AnyAsync(i => i.Name == fileName))
-            {
-                return Json(new { success = false, message = $"Image with this name already exists: {fileName}" });
-            }
-
-            FileInfo tempFilePath = new(Path.Combine(ImagesDirectory, fileName + ".temp"));
+            FileInfo tempFilePath = new(Path.Combine(tempImageDir, fileName));
             using (FileStream stream = new(tempFilePath.FullName, FileMode.Append, FileAccess.Write))
             {
                 await chunk.CopyToAsync(stream);
-            }
-
-            // Check if this was the last chunk
-            if (chunkIndex == totalChunks - 1)
-            {
-                DBImage dBImage = new()
-                {
-                    ID = Guid.NewGuid().ToString() + Path.GetExtension(fileName),
-                    Name = fileName,
-                    Size = tempFilePath.Length,
-                };
-                currFolder.Images.Add(dBImage.ID);
-                _context.Images.Add(dBImage);
-                while (currFolder is not null)
-                {
-                    currFolder.Size += dBImage.Size;
-                    _context.Folders.Update(currFolder);
-                    currFolder = await _context.Folders.FindAsync(currFolder.ParentFolderID);
-                }
-                await _context.SaveChangesAsync();
-
-                FileInfo finalPath = new(Path.Combine(ImagesDirectory, dBImage.ID));
-                System.IO.File.Move(tempFilePath.FullName, finalPath.FullName);
             }
             return Json(new { success = true });
         }
@@ -138,6 +123,54 @@ public class HomeController(ApplicationDbContext context) : Controller
             Console.WriteLine($"Error uploading chunk: {ex.Message}");
             return Json(new { success = false, message = $"Error: {ex.Message}" });
         }
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> FinalizeUpload(string folderID)
+    {
+        string? userID = HttpContext.Session.GetString("UserID");
+        if (string.IsNullOrEmpty(userID))
+        {
+            return Json(new { success = false, message = "User not authenticated" });
+        }
+
+        DBFolder? currFolder = await _context.Folders.FindAsync(folderID);
+        if (currFolder is null)
+        {
+            return Json(new { success = false, message = $"Folder not in database: {folderID}" });
+        }
+
+        DirectoryInfo tempImageDir = new(Path.Combine(ImagesDirectory, userID));
+        if (!tempImageDir.Exists)
+        {
+            return Json(new { success = false, messsage = $"No temp folder found." });
+        }
+
+        double totalSizeIncrease = 0.0;
+        foreach (FileInfo fileInfo in tempImageDir.GetFiles())
+        {
+            totalSizeIncrease += fileInfo.Length;
+            DBImage dBImage = new()
+            {
+                ID = Guid.NewGuid().ToString() + fileInfo.Extension,
+                Name = fileInfo.Name,
+                Size = fileInfo.Length,
+            };
+            _context.Images.Add(dBImage);
+            currFolder.Images.Add(dBImage.ID);
+            fileInfo.MoveTo(Path.Combine(ImagesDirectory, dBImage.ID));
+        }
+
+        while (currFolder is not null)
+        {
+            currFolder.Size += totalSizeIncrease;
+            _context.Folders.Update(currFolder);
+            currFolder = await _context.Folders.FindAsync(currFolder.ParentFolderID);
+        }
+        await _context.SaveChangesAsync();
+        tempImageDir.Delete(true);
+
+        return Json(new { success = true });
     }
 
     [HttpPost]
